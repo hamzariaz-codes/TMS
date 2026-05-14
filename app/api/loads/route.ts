@@ -36,9 +36,12 @@ export async function POST(request: Request) {
     sendLoadEmail(load).catch(err => console.error('Background email sending failed:', err))
 
     return NextResponse.json(load)
-  } catch (error) {
+  } catch (error: any) {
     console.error('API Error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return NextResponse.json({ 
+      error: 'Internal Server Error',
+      details: error.message 
+    }, { status: 500 })
   }
 }
 
