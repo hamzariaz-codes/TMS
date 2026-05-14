@@ -52,7 +52,8 @@ export default function ShipmentForm({ onSuccess }: Props) {
       })
 
       if (!response.ok) {
-        throw new Error('Failed to submit shipment. Please try again.')
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.details || errorData.error || 'Failed to submit shipment. Please try again.')
       }
 
       const data = await response.json()
