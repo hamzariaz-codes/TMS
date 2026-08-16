@@ -2,8 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { showToast } from '../ui/Toast'
 
 interface SidebarProps {
   isMobile?: boolean
@@ -11,20 +10,25 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ isMobile, onClose }: SidebarProps) {
-  const pathname = usePathname()
-  const router = useRouter()
+  const pathname = usePathname() || ''
+
   const handleSignOut = async () => {
+    // The session cookie is httpOnly, so only the server can clear it. If the
+    // request fails, say so instead of redirecting to /login, which middleware
+    // would just bounce straight back to the dashboard.
     try {
-      const supabase = createClient()
-      await supabase.auth.signOut()
-      // Force a full page reload to the login page to ensure all state and cookies are cleared
-      window.location.href = '/login'
+      const res = await fetch('/api/auth/logout', { method: 'POST' })
+      if (!res.ok) throw new Error('Logout request failed')
     } catch (error) {
-      console.error('Sign out error:', error)
-      // Fallback redirect
-      router.push('/login')
+      console.error('Sign out failed:', error)
+      showToast('Failed to sign out. Please try again.', 'error')
+      return
     }
+
+    window.location.href = '/login'
   }
+
+
 
   const links = [
     { label: 'Dashboard', href: '/dashboard', icon: (

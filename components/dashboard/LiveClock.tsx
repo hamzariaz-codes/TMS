@@ -3,10 +3,9 @@
 import { useState, useEffect } from 'react'
 
 export default function LiveClock() {
-  const [time, setTime] = useState<string>('')
+  const [time, setTime] = useState<string | null>(null)
 
   useEffect(() => {
-    // Initial time
     setTime(new Date().toLocaleTimeString())
 
     const interval = setInterval(() => {
@@ -16,7 +15,14 @@ export default function LiveClock() {
     return () => clearInterval(interval)
   }, [])
 
-  if (!time) return null
+  if (time === null) {
+    return (
+      <div className="text-right opacity-0 pointer-events-none">
+        <p className="text-[10px] font-bold uppercase">Local Time</p>
+        <p className="text-sm font-bold">--:--:--</p>
+      </div>
+    )
+  }
 
   return (
     <div className="text-right">
@@ -25,3 +31,4 @@ export default function LiveClock() {
     </div>
   )
 }
+

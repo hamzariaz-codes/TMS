@@ -20,20 +20,64 @@ export default function LoadsTable({ loads, setLoads }: Props) {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [isDeleting, setIsDeleting] = useState(false)
 
+  const filteredLoads = useMemo(() => {
+    const term = searchTerm.toLowerCase()
+    // Coerce defensively: a record with a missing or non-string field (an older
+    // row, or one written before the API validated input) would otherwise throw
+    // on .toLowerCase() and take the whole dashboard down.
+    const matches = (value: unknown) => String(value ?? '').toLowerCase().includes(term)
+
+    const start = startDate ? new Date(startDate).getTime() : null
+    const end = endDate ? new Date(endDate).getTime() : null
+
+    return loads.filter((load) => {
+      const searchMatch =
+        matches(load.load_number) ||
+        matches(load.submitter_name) ||
+        matches(load.product_name)
+
+      const loadDate = new Date(load.pickup_date).getTime()
+      // An unparseable pickup date only hides the row when a range is actually
+      // set, instead of making every comparison silently false.
+      const dateMatch =
+        (start === null && end === null) ||
+        (!Number.isNaN(loadDate) &&
+          (start === null || loadDate >= start) &&
+          (end === null || loadDate <= end))
+
+      return searchMatch && dateMatch
+    }).sort((a, b) => {
+      const bTime = new Date(b.created_at).getTime() || 0
+      const aTime = new Date(a.created_at).getTime() || 0
+      return bTime - aTime
+    })
+  }, [loads, searchTerm, startDate, endDate])
+
+  // Only ever act on rows the user can actually see. Selections used to survive
+  // a filter change, so "Delete Selected" could remove hidden shipments the
+  // confirmation dialog never mentioned.
+  const visibleSelectedIds = useMemo(
+    () => selectedIds.filter(id => filteredLoads.some(load => load.id === id)),
+    [selectedIds, filteredLoads]
+  )
+
   const handleBulkDelete = async () => {
-    if (selectedIds.length === 0) return
-    if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} shipment(s)? This cannot be undone.`)) return
+    const idsToDelete = visibleSelectedIds
+    if (idsToDelete.length === 0) return
+    if (!window.confirm(`Are you sure you want to delete ${idsToDelete.length} shipment(s)? This cannot be undone.`)) return
 
     setIsDeleting(true)
     try {
       const res = await fetch('/api/loads/bulk-delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ loadIds: selectedIds })
+        body: JSON.stringify({ loadIds: idsToDelete })
       })
       if (!res.ok) throw new Error('Failed to delete')
-      showToast(`Successfully deleted ${selectedIds.length} shipment(s)`)
-      setSelectedIds([])
+      setLoads(prev => prev.filter(l => !idsToDelete.includes(l.id)))
+      showToast(`Successfully deleted ${idsToDelete.length} shipment(s)`)
+      setSelectedIds(prev => prev.filter(id => !idsToDelete.includes(id)))
+
     } catch (error) {
       console.error(error)
       showToast('Failed to delete shipments. Please try again.', 'error')
@@ -41,23 +85,6 @@ export default function LoadsTable({ loads, setLoads }: Props) {
       setIsDeleting(false)
     }
   }
-
-  const filteredLoads = useMemo(() => {
-    return loads.filter((load) => {
-      const searchMatch = 
-        load.load_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        load.submitter_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        load.product_name.toLowerCase().includes(searchTerm.toLowerCase())
-      
-      const loadDate = new Date(load.pickup_date)
-      const start = startDate ? new Date(startDate) : null
-      const end = endDate ? new Date(endDate) : null
-
-      const dateMatch = (!start || loadDate >= start) && (!end || loadDate <= end)
-
-      return searchMatch && dateMatch
-    }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-  }, [loads, searchTerm, startDate, endDate])
 
   const handleStatusUpdate = (loadId: string, newStatus: LoadStatus) => {
     setLoads(prev => prev.map(l => l.id === loadId ? { ...l, status: newStatus } : l))
@@ -98,13 +125,13 @@ export default function LoadsTable({ loads, setLoads }: Props) {
             className="w-full md:w-40 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent outline-none transition-all text-sm font-medium"
           />
         </div>
-        {selectedIds.length > 0 && (
+        {visibleSelectedIds.length > 0 && (
           <button
             onClick={handleBulkDelete}
             disabled={isDeleting}
-            className="px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-2 whitespace-nowrap"
+            className="px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-2 whitespace-nowrap disabled:opacity-60"
           >
-            {isDeleting ? 'Deleting...' : `Delete Selected (${selectedIds.length})`}
+            {isDeleting ? 'Deleting...' : `Delete Selected (${visibleSelectedIds.length})`}
           </button>
         )}
       </div>
@@ -115,11 +142,11 @@ export default function LoadsTable({ loads, setLoads }: Props) {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
-                <th className="px-6 py-4 w-12 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                <th className="px-6 py-4 w-12 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">
                   <input
                     type="checkbox"
                     className="rounded border-slate-300 text-accent focus:ring-accent cursor-pointer"
-                    checked={filteredLoads.length > 0 && selectedIds.length === filteredLoads.length}
+                    checked={filteredLoads.length > 0 && visibleSelectedIds.length === filteredLoads.length}
                     onChange={(e) => {
                       if (e.target.checked) {
                         setSelectedIds(filteredLoads.map(l => l.id))
@@ -129,13 +156,13 @@ export default function LoadsTable({ loads, setLoads }: Props) {
                     }}
                   />
                 </th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Load Number</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Submitter</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Product</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Pickup Date</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Created At</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Actions</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Load Number</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Submitter</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Product</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Pickup Date</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Status</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Created At</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -145,7 +172,7 @@ export default function LoadsTable({ loads, setLoads }: Props) {
                   className="group hover:bg-slate-50/50 transition-colors cursor-pointer"
                   onClick={() => setSelectedLoad(load)}
                 >
-                  <td className="px-6 py-5" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-6 py-5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       className="rounded border-slate-300 text-accent focus:ring-accent cursor-pointer"
@@ -159,24 +186,24 @@ export default function LoadsTable({ loads, setLoads }: Props) {
                       }}
                     />
                   </td>
-                  <td className="px-6 py-5">
-                    <span className="font-bold text-navy-950 group-hover:text-accent transition-colors">{load.load_number}</span>
+                  <td className="px-6 py-5 whitespace-nowrap">
+                    <span className="font-bold text-navy-950 group-hover:text-accent transition-colors font-mono text-sm tracking-tight">{load.load_number}</span>
                   </td>
-                  <td className="px-6 py-5">
+                  <td className="px-6 py-5 whitespace-nowrap">
                     <div className="flex flex-col">
                       <span className="font-semibold text-navy-900">{load.submitter_name}</span>
                       <span className="text-xs text-slate-400">{load.submitter_email}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-5 text-sm text-navy-700 font-medium">{load.product_name}</td>
-                  <td className="px-6 py-5 text-sm text-navy-700 font-medium">{load.pickup_date}</td>
-                  <td className="px-6 py-5">
+                  <td className="px-6 py-5 text-sm text-navy-700 font-medium whitespace-nowrap">{load.product_name}</td>
+                  <td className="px-6 py-5 text-sm text-navy-700 font-medium whitespace-nowrap">{load.pickup_date}</td>
+                  <td className="px-6 py-5 whitespace-nowrap">
                     <StatusBadge status={load.status} />
                   </td>
-                  <td className="px-6 py-5 text-sm text-slate-500 font-medium">
+                  <td className="px-6 py-5 text-sm text-slate-500 font-medium whitespace-nowrap">
                     {new Date(load.created_at).toLocaleDateString()}
                   </td>
-                  <td className="px-6 py-5 text-right" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-6 py-5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                     <StatusDropdown 
                       loadId={load.id} 
                       currentStatus={load.status} 
@@ -184,6 +211,7 @@ export default function LoadsTable({ loads, setLoads }: Props) {
                     />
                   </td>
                 </tr>
+
                 )) : (
                 <tr>
                   <td colSpan={8} className="px-6 py-20 text-center">

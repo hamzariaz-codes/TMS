@@ -7,17 +7,24 @@ export default function ToastContainer() {
   const [toasts, setToasts] = useState<ToastMessage[]>([])
 
   useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = []
+
     const handleToast = (event: CustomEvent<ToastMessage>) => {
       const newToast = event.detail
       setToasts((prev) => [...prev, newToast])
-      
-      setTimeout(() => {
-        setToasts((prev) => prev.filter((t) => t.id !== newToast.id))
-      }, 5000)
+
+      timers.push(
+        setTimeout(() => {
+          setToasts((prev) => prev.filter((t) => t.id !== newToast.id))
+        }, 5000)
+      )
     }
 
     window.addEventListener('show-toast' as any, handleToast)
-    return () => window.removeEventListener('show-toast' as any, handleToast)
+    return () => {
+      window.removeEventListener('show-toast' as any, handleToast)
+      timers.forEach(clearTimeout)
+    }
   }, [])
 
   return (
@@ -42,10 +49,16 @@ export default function ToastContainer() {
   )
 }
 
+let toastCounter = 0
+
 export function showToast(message: string, type: 'success' | 'error' = 'success') {
+  if (typeof window === 'undefined') return
+
   const event = new CustomEvent('show-toast', {
     detail: {
-      id: Math.random().toString(36).substr(2, 9),
+      // A counter rather than Math.random(), so two toasts can never collide on
+      // the same React key.
+      id: `toast-${Date.now()}-${toastCounter++}`,
       message,
       type
     }

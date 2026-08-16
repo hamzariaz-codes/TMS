@@ -15,20 +15,36 @@ function getResend() {
   return resendClient
 }
 
+/**
+ * Every value below is submitter-controlled and interpolated into an HTML
+ * email, so it has to be escaped — otherwise a name like `<img onerror=...>`
+ * is delivered as live markup to whoever opens the message.
+ */
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 export async function sendLoadEmail(load: Load) {
-  const { 
-    load_number, 
-    submitter_name, 
-    submitter_email,
-    pickup_address,
-    delivery_address,
-    product_name,
-    weight,
-    weight_unit,
-    quantity,
-    pickup_date,
-    pickup_time
-  } = load
+  const load_number = escapeHtml(load.load_number)
+  const submitter_name = escapeHtml(load.submitter_name)
+  const submitter_email = load.submitter_email
+  const pickup_address = escapeHtml(load.pickup_address).replace(/\r?\n/g, '<br/>')
+  const delivery_address = escapeHtml(load.delivery_address).replace(/\r?\n/g, '<br/>')
+  const product_name = escapeHtml(load.product_name)
+  const weight = escapeHtml(load.weight)
+  const weight_unit = escapeHtml(load.weight_unit)
+  const quantity = escapeHtml(load.quantity)
+  const pickup_date = escapeHtml(load.pickup_date)
+  const pickup_time = escapeHtml(load.pickup_time)
+
+  if (!submitter_email || typeof submitter_email !== 'string') {
+    return { success: false, error: 'Missing recipient email address' }
+  }
 
   try {
     const resend = getResend()
@@ -71,9 +87,10 @@ export async function sendLoadEmail(load: Load) {
           </table>
 
           <div style="margin-top: 20px;">
-            <p><strong>Pickup Address:</strong><br/>${pickup_address.replace(/\n/g, '<br/>')}</p>
-            <p><strong>Delivery Address:</strong><br/>${delivery_address.replace(/\n/g, '<br/>')}</p>
+            <p><strong>Pickup Address:</strong><br/>${pickup_address}</p>
+            <p><strong>Delivery Address:</strong><br/>${delivery_address}</p>
           </div>
+
 
           <p style="margin-top: 30px; font-size: 14px; color: #64748b;">
             Thank you for using LoadDesk.

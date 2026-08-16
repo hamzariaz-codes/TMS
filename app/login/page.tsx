@@ -17,15 +17,18 @@ export default function LoginPage() {
     setLoading(true)
     setError(null)
 
-    const supabase = createClient()
-
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
       })
 
-      if (error) throw error
+      const data = await response.json()
+
+      if (!response.ok || data.error) {
+        throw new Error(data.error || 'Failed to login. Please try again.')
+      }
 
       router.push('/dashboard')
       router.refresh()
@@ -35,6 +38,8 @@ export default function LoginPage() {
       setLoading(false)
     }
   }
+
+
 
   return (
     <main className="min-h-screen bg-navy-950 flex flex-col items-center justify-center p-4">

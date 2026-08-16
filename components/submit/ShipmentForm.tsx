@@ -35,6 +35,24 @@ export default function ShipmentForm({ onSuccess }: Props) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setError(null)
+
+    if (currentStep === 0) {
+      if (!formData.submitter_name.trim() || !formData.submitter_email.trim()) {
+        setError('Please fill in your name and email address.')
+        return
+      }
+    } else if (currentStep === 1) {
+      if (!formData.pickup_address.trim() || !formData.delivery_address.trim()) {
+        setError('Please provide both pickup and delivery addresses.')
+        return
+      }
+    } else if (currentStep === 2) {
+      if (!formData.product_name.trim()) {
+        setError('Please specify a product name.')
+        return
+      }
+    }
     
     if (currentStep < STEPS.length - 1) {
       setCurrentStep(prev => prev + 1)
@@ -42,7 +60,6 @@ export default function ShipmentForm({ onSuccess }: Props) {
     }
 
     setLoading(true)
-    setError(null)
 
     try {
       const response = await fetch('/api/loads', {
@@ -64,6 +81,7 @@ export default function ShipmentForm({ onSuccess }: Props) {
       setLoading(false)
     }
   }
+
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target

@@ -11,33 +11,69 @@ export default function DashboardContent({ initialLoads }: { initialLoads: Load[
   const supabase = createClient()
 
   useEffect(() => {
-    const channel = supabase
-      .channel('schema-db-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'loads',
-        },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            const newLoad = payload.new as Load
-            setLoads((prev) => [newLoad, ...prev])
-          } else if (payload.eventType === 'UPDATE') {
-            const updatedLoad = payload.new as Load
-            setLoads((prev) => prev.map((l) => (l.id === updatedLoad.id ? updatedLoad : l)))
-          } else if (payload.eventType === 'DELETE') {
-            setLoads((prev) => prev.filter((l) => l.id !== payload.old.id))
-          }
+    setLoads(initialLoads)
+  }, [initialLoads])
+
+  useEffect(() => {
+    let isMounted = true
+
+    // Fetch latest loads on mount to ensure client has latest data
+    fetch('/api/loads')
+      .then((res) => {
+        if (!res.ok) throw new Error(`Failed to load shipments (${res.status})`)
+        return res.json()
+      })
+      .then((data) => {
+        if (isMounted && Array.isArray(data)) {
+          setLoads(data)
         }
-      )
-      .subscribe()
+      })
+      .catch((err) => console.warn('Failed to refresh loads:', err))
+
+    let channel: any = null
+    try {
+      channel = supabase
+        .channel('schema-db-changes')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'loads',
+          },
+          (payload) => {
+            if (payload.eventType === 'INSERT') {
+              const newLoad = payload.new as Load
+              // The mount fetch and this event can both deliver the same row;
+              // without the guard it shows up twice and duplicates the React key.
+              setLoads((prev) =>
+                prev.some((l) => l.id === newLoad.id) ? prev : [newLoad, ...prev]
+              )
+            } else if (payload.eventType === 'UPDATE') {
+              const updatedLoad = payload.new as Load
+              setLoads((prev) => prev.map((l) => (l.id === updatedLoad.id ? updatedLoad : l)))
+            } else if (payload.eventType === 'DELETE') {
+              const deletedId = (payload.old as Partial<Load> | null)?.id
+              if (!deletedId) return
+              setLoads((prev) => prev.filter((l) => l.id !== deletedId))
+            }
+          }
+        )
+        .subscribe()
+    } catch (e) {
+      console.warn('Realtime subscription not available:', e)
+    }
 
     return () => {
-      supabase.removeChannel(channel)
+      isMounted = false
+      if (channel) {
+        try {
+          supabase.removeChannel(channel)
+        } catch (e) {}
+      }
     }
   }, [supabase])
+
 
   const stats: LoadStats = useMemo(() => {
     return {
